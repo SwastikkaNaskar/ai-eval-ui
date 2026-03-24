@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Image Eval — Indian Ethnic Wear | Josh Talks</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f9f9f7; color: #222; min-height: 100vh; }
+    #root { max-width: 780px; margin: 0 auto; padding: 32px 20px 60px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState } = React;
+
+    const MODELS = [
+      { id: "ideogram", name: "Ideogram", provider: "Ideogram AI", color: "#7F77DD", bg: "#EEEDFE", dark: "#3C3489" },
+      { id: "gemini", name: "Gemini Pro", provider: "Google", color: "#1D9E75", bg: "#E1F5EE", dark: "#085041" },
+      { id: "firefly", name: "Adobe Firefly", provider: "Adobe", color: "#D85A30", bg: "#FAECE7", dark: "#4A1B0C" },
+    ];
+
+    const CRITERIA = ["Cultural accuracy", "Commercial usability"];
+
+    const PROMPTS = [
+      { id: 1, short: "Saree product shot", full: "Red Banarasi silk saree neatly folded on white background, zari border, studio lighting" },
+      { id: 2, short: "Lehenga with model", full: "Woman wearing royal blue lehenga choli with golden embroidery, Indian features, white background" },
+      { id: 3, short: "Men's kurta with model", full: "Man wearing cream cotton kurta pyjama set, Diwali occasion, Indian face, white background" },
+      { id: 4, short: "Anarkali suit flat lay", full: "Flat lay of mustard yellow anarkali suit on white surface, product catalogue style" },
+      { id: 5, short: "Embroidery close-up", full: "Close-up of zari embroidery on green silk saree, macro photography, rich texture" },
+    ];
+
+    const LABELS = ["Image A", "Image B", "Image C"];
+
+    const SCORES = {
+      Ideogram:        { "Cultural accuracy": 4.4, "Commercial usability": 4.5 },
+      "Gemini Pro":    { "Cultural accuracy": 3.7, "Commercial usability": 3.8 },
+      "Adobe Firefly": { "Cultural accuracy": 3.3, "Commercial usability": 3.5 },
+    };
+
+    const OVERALL_AVG = { Ideogram: 4.45, "Gemini Pro": 3.75, "Adobe Firefly": 3.40 };
+    const VOTES = { Ideogram: 28, "Gemini Pro": 14, "Adobe Firefly": 8 };
+
+    const RANK_STYLE = [
+      { bg: "#FAEEDA", text: "#633806", chip: "Best overall",           chipBg: "#FAEEDA", chipC: "#633806" },
+      { bg: "#F1EFE8", text: "#444441", chip: "Consistent performer",   chipBg: "#E1F5EE", chipC: "#085041" },
+      { bg: "#FAECE7", text: "#4A1B0C", chip: "Needs cultural tuning",  chipBg: "#FAECE7", chipC: "#4A1B0C" },
+    ];
+
+    function Stars({ value, onChange }) {
+      return (
+        <div style={{ display: "flex", gap: 3 }}>
+          {[1,2,3,4,5].map(n => (
+            <button key={n} onClick={() => onChange(n)} style={{
+              width: 30, height: 30, borderRadius: 6,
+              border: n <= value ? "1.5px solid #EF9F27" : "1px solid #ddd",
+              background: n <= value ? "#FAEEDA" : "#fff",
+              color: n <= value ? "#854F0B" : "#aaa",
+              cursor: "pointer", fontSize: 13, fontWeight: 600,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{n}</button>
+          ))}
+        </div>
+      );
+    }
+
+    function Ring({ pct, color, size = 70 }) {
+      const r = 15.9, c = 2 * Math.PI * r;
+      return (
+        <div style={{ position: "relative", width: size, height: size, margin: "0 auto" }}>
+          <svg viewBox="0 0 36 36" width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+            <circle cx="18" cy="18" r={r} fill="none" stroke="#eee" strokeWidth="3" />
+            <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="3"
+              strokeDasharray={`${(pct/100)*c} ${c}`} strokeLinecap="round" />
+          </svg>
+          <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700 }}>{pct}%</span>
+        </div>
+      );
+    }
+
+    function Bar({ score, color }) {
+      return (
+        <div style={{ height: 7, borderRadius: 99, background: "#f0efeb", overflow: "hidden", flex: 1 }}>
+          <div style={{ height: "100%", borderRadius: 99, background: color, width: `${(score/5)*100}%` }} />
+        </div>
+      );
+    }
+
+    function RatingScreen() {
+      const [prompt, setPrompt] = useState(0);
+      const [ratings, setRatings] = useState({});
+      const [pref, setPref] = useState({});
+      const p = PROMPTS[prompt];
+      const setR = (img, crit, val) => setRatings(r => ({ ...r, [`${prompt}-${img}-${crit}`]: val }));
+      const setPrefV = v => setPref(r => ({ ...r, [prompt]: v }));
+
+      return (
+        <div style={{ maxWidth: 720 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#999", marginBottom: 3 }}>Prompt {p.id} of 5</div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>{p.short}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 4, lineHeight: 1.5, maxWidth: 440 }}>"{p.full}"</div>
+            </div>
+            <div style={{ display: "flex", gap: 4, paddingTop: 4 }}>
+              {PROMPTS.map((_, i) => (
+                <div key={i} style={{ width: 26, height: 4, borderRadius: 99, background: i <= prompt ? "#7F77DD" : "#e8e8e4", cursor: "pointer" }} onClick={() => setPrompt(i)} />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 22 }}>
+            {LABELS.map((label, i) => (
+              <div key={i}>
+                <div style={{ aspectRatio: "4/5", borderRadius: 10, background: "#f7f7f5", border: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#eee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "#ccc" }}>{["A","B","C"][i]}</div>
+                  <span style={{ fontSize: 12, color: "#bbb" }}>{label}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#bbb", textAlign: "center", marginTop: 5 }}>Model hidden</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 18 }}>Rate each image</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+              {LABELS.map((label, imgIdx) => (
+                <div key={imgIdx}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 12 }}>{label}</div>
+                  {CRITERIA.map(crit => (
+                    <div key={crit} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: "#999", marginBottom: 5 }}>{crit}</div>
+                      <Stars value={ratings[`${prompt}-${imgIdx}-${crit}`] || 0} onChange={v => setR(imgIdx, crit, v)} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "18px 22px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>If you were the seller, which image would you list?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {LABELS.map((label, i) => (
+                <button key={i} onClick={() => setPrefV(i)} style={{
+                  flex: 1, padding: "11px 0", borderRadius: 8,
+                  border: pref[prompt] === i ? "1.5px solid #1D9E75" : "1px solid #ddd",
+                  background: pref[prompt] === i ? "#E1F5EE" : "#fff",
+                  color: pref[prompt] === i ? "#085041" : "#888",
+                  fontWeight: pref[prompt] === i ? 700 : 400,
+                  cursor: "pointer", fontSize: 13,
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "18px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Any observations? (optional)</div>
+            <textarea placeholder="e.g. Image B's saree looked more Chinese than Indian..." style={{ width: "100%", minHeight: 60, borderRadius: 8, border: "1px solid #ddd", padding: "10px 12px", fontSize: 13, resize: "vertical", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <button onClick={() => setPrompt(Math.max(0, prompt-1))} disabled={prompt === 0} style={{ padding: "10px 24px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", fontSize: 13, fontWeight: 600, cursor: prompt === 0 ? "default" : "pointer", opacity: prompt === 0 ? 0.4 : 1 }}>← Previous</button>
+            <button onClick={() => setPrompt(Math.min(4, prompt+1))} style={{ padding: "10px 28px", borderRadius: 8, border: "1px solid #ccc", background: prompt === 4 ? "#7F77DD" : "#fff", color: prompt === 4 ? "#fff" : "#222", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{prompt === 4 ? "Submit ✓" : "Next prompt →"}</button>
+          </div>
+        </div>
+      );
+    }
+
+    function DashboardScreen() {
+      const totalVotes = Object.values(VOTES).reduce((a,b) => a+b, 0);
+      const stats = [
+        { label: "Participants", val: "10" },
+        { label: "Prompts", val: "5" },
+        { label: "Models", val: "3" },
+        { label: "Total ratings", val: "100" },
+      ];
+
+      return (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 22 }}>
+            {stats.map(s => (
+              <div key={s.label} style={{ background: "#f7f7f5", borderRadius: 10, padding: "14px 16px" }}>
+                <div style={{ fontSize: 12, color: "#999", marginBottom: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{s.val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 20 }}>Average scores by criterion</div>
+            {CRITERIA.map(crit => (
+              <div key={crit} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 13, color: "#666", marginBottom: 10 }}>{crit}</div>
+                {MODELS.map(m => {
+                  const s = SCORES[m.name][crit];
+                  return (
+                    <div key={m.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 36px", gap: 10, alignItems: "center", marginBottom: 7 }}>
+                      <span style={{ fontSize: 12, color: "#999", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                      <Bar score={s} color={m.color} />
+                      <span style={{ fontSize: 13, fontWeight: 700, textAlign: "right" }}>{s.toFixed(1)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Preference votes — "which would you list?"</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+              {MODELS.map(m => {
+                const pct = Math.round((VOTES[m.name] / totalVotes) * 100);
+                return (
+                  <div key={m.id} style={{ textAlign: "center" }}>
+                    <Ring pct={pct} color={m.color} />
+                    <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8 }}>{m.name}</div>
+                    <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{VOTES[m.name]} of {totalVotes} votes</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Key observations</div>
+            {[
+              { color: "#7F77DD", text: "Ideogram AI produced the most visually polished images — vibrant colors, accurate fabric textures, closest to professional product photography." },
+              { color: "#1D9E75", text: "Gemini Pro was consistent with no major failures, landing in the middle on quality — usable across all five prompts." },
+              { color: "#D85A30", text: "Adobe Firefly struggled with cultural specificity — garments looked generic rather than distinctively Indian in 3 of 5 prompts." },
+            ].map((o, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+                <span style={{ color: o.color, fontWeight: 700, flexShrink: 0 }}>▸</span>
+                <span>{o.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function LeaderboardScreen() {
+      const sorted = MODELS.map(m => ({ ...m, avg: OVERALL_AVG[m.name] })).sort((a,b) => b.avg - a.avg);
+
+      return (
+        <div>
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Overall model ranking — Indian ethnic wear</div>
+            {sorted.map((m, i) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 0", borderBottom: i < 2 ? "1px solid #f0efeb" : "none" }}>
+                <div style={{ width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, background: RANK_STYLE[i].bg, color: RANK_STYLE[i].text }}>{i+1}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{m.name}</div>
+                  <div style={{ fontSize: 12, color: "#999" }}>{m.provider}</div>
+                </div>
+                <div style={{ textAlign: "right", marginRight: 12 }}>
+                  <div style={{ fontSize: 22, fontWeight: 700 }}>{m.avg.toFixed(2)}</div>
+                  <div style={{ fontSize: 11, color: "#999" }}>avg score</div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "5px 14px", borderRadius: 99, background: RANK_STYLE[i].chipBg, color: RANK_STYLE[i].chipC, whiteSpace: "nowrap" }}>{RANK_STYLE[i].chip}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Category winners</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+              {CRITERIA.map(crit => {
+                const winner = MODELS.reduce((best, m) => SCORES[m.name][crit] > SCORES[best.name][crit] ? m : best, MODELS[0]);
+                return (
+                  <div key={crit} style={{ background: "#f7f7f5", borderRadius: 10, padding: 16, textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: "#999", marginBottom: 6 }}>{crit}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: winner.dark }}>{winner.name}</div>
+                    <div style={{ fontSize: 12, color: "#999", marginTop: 3 }}>{SCORES[winner.name][crit].toFixed(1)} / 5.0</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: "20px 22px", marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Prompts tested</div>
+            {PROMPTS.map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: p.id < 5 ? "1px solid #f4f4f1" : "none" }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: "#EEEDFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#3C3489", flexShrink: 0 }}>{p.id}</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.short}</div>
+                  <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{p.full}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#f7f7f5", borderRadius: 10, padding: "14px 18px" }}>
+            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.6 }}>
+              Blind evaluation by 10 participants across 5 Indian ethnic wear prompts. Rated on cultural accuracy and commercial usability (1–5 scale) with overall preference vote.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [tab, setTab] = useState("rating");
+      const tabs = [
+        { id: "rating",      label: "Rating interface" },
+        { id: "dashboard",   label: "Results dashboard" },
+        { id: "leaderboard", label: "Leaderboard" },
+      ];
+
+      return (
+        <div style={{ fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", padding: "12px 0", color: "#222" }}>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, color: "#7F77DD", marginBottom: 4 }}>Josh Talks AI — Product Ops Challenge</div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 2 }}>AI image evaluation — Indian ethnic wear</div>
+            <div style={{ fontSize: 13, color: "#999" }}>Gemini Pro vs Ideogram vs Adobe Firefly · 5 prompts · 10 blind raters</div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, paddingBottom: 18, borderBottom: "1px solid #eee", marginBottom: 24 }}>
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{
+                padding: "9px 22px", borderRadius: 8,
+                border: tab === t.id ? "1.5px solid #bbb" : "1px solid #e5e5e5",
+                background: tab === t.id ? "#f5f5f3" : "#fff",
+                color: tab === t.id ? "#111" : "#888",
+                fontWeight: tab === t.id ? 700 : 400,
+                fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+              }}>{t.label}</button>
+            ))}
+          </div>
+
+          {tab === "rating"      && <RatingScreen />}
+          {tab === "dashboard"   && <DashboardScreen />}
+          {tab === "leaderboard" && <LeaderboardScreen />}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
