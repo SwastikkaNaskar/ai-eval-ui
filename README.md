@@ -1,5 +1,4 @@
 # AI Image Evaluation — Indian Ethnic Wear
-### Josh Talks AI · Product Operations Hiring Challenge
  
 A blind evaluation tool testing whether AI image generation models can produce product-ready photos of Indian ethnic wear for e-commerce platforms like Meesho, Flipkart, and Amazon India.
  
